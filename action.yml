@@ -1,0 +1,161 @@
+name: 'TruffleHog OSS'
+description: 'Find and verify leaked credentials in your source code.'
+author: step-security
+
+inputs:
+  path:
+    description: Repository path
+    required: false
+    default: "./"
+  base:
+    description: Start scanning from here (usually main branch).
+    required: false
+    default: ""
+  head:
+    description: Scan commits until here (usually dev branch).
+    required: false
+  extra_args:
+    default: ""
+    description: Extra args to be passed to the trufflehog cli.
+    required: false
+  version:
+    default: "latest"
+    description: Scan with this trufflehog cli version.
+    required: false
+branding:
+  icon: "shield"
+  color: "green"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Subscription check
+      env:
+        REPO_PRIVATE: ${{ github.event.repository.private }}
+      run: |
+        # validate subscription status
+        UPSTREAM="trufflesecurity/trufflehog"
+        ACTION_REPO="${GITHUB_ACTION_REPOSITORY:-}"
+        DOCS_URL="https://docs.stepsecurity.io/actions/stepsecurity-maintained-actions"
+
+        echo ""
+        echo -e "\033[1;36mStepSecurity Maintained Action\033[0m"
+        echo "Secure drop-in replacement for $UPSTREAM"
+        if [ "$REPO_PRIVATE" = "false" ]; then
+          echo -e "\033[32m✓ Free for public repositories\033[0m"
+        fi
+        echo -e "\033[36mLearn more:\033[0m $DOCS_URL"
+        echo ""
+
+        if [ "$REPO_PRIVATE" != "false" ]; then
+          SERVER_URL="${GITHUB_SERVER_URL:-https://github.com}"
+
+          if [ "$SERVER_URL" != "https://github.com" ]; then
+            BODY=$(printf '{"action":"%s","ghes_server":"%s"}' "$ACTION_REPO" "$SERVER_URL")
+          else
+            BODY=$(printf '{"action":"%s"}' "$ACTION_REPO")
+          fi
+
+          API_URL="https://agent.api.stepsecurity.io/v1/github/$GITHUB_REPOSITORY/actions/maintained-actions-subscription"
+
+          RESPONSE=$(curl --max-time 3 -s -w "%{http_code}" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d "$BODY" \
+            "$API_URL" -o /dev/null) && CURL_EXIT_CODE=0 || CURL_EXIT_CODE=$?
+
+          if [ $CURL_EXIT_CODE -ne 0 ]; then
+            echo "Timeout or API not reachable. Continuing to next step."
+          elif [ "$RESPONSE" = "403" ]; then
+            echo -e "::error::\033[1;31mThis action requires a StepSecurity subscription for private repositories.\033[0m"
+            echo -e "::error::\033[31mLearn how to enable a subscription: $DOCS_URL\033[0m"
+            exit 1
+          fi
+        fi
+      shell: bash
+
+    - shell: bash
+      working-directory: ${{ inputs.path }}
+      env:
+        BASE: ${{ inputs.base }}
+        HEAD: ${{ inputs.head }}
+        ARGS: ${{ inputs.extra_args }}
+        COMMIT_IDS: ${{ toJson(github.event.commits.*.id) }}
+        VERSION: ${{ inputs.version }}
+        EVENT_NAME: ${{ github.event_name }}
+        EVENT_BEFORE: ${{ github.event.before }}
+        EVENT_AFTER: ${{ github.event.after }}
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      run: |
+        ##########################################
+        ## ADVANCED USAGE                       ##
+        ## Scan by BASE & HEAD user inputs      ##
+        ## If BASE == HEAD, exit with error     ##
+        ##########################################
+        # Check if jq is installed, if not, install it
+        if ! command -v jq &> /dev/null
+        then
+          echo "jq could not be found, installing..."
+          apt-get -y update && apt-get install -y jq
+        fi
+
+        git status >/dev/null  # make sure we are in a git repository
+        if [ -n "$BASE" ] || [ -n "$HEAD" ]; then
+          if [ -n "$BASE" ]; then
+            base_commit=$(git rev-parse "$BASE" 2>/dev/null) || true
+          else
+            base_commit=""
+          fi
+          if [ -n "$HEAD" ]; then
+            head_commit=$(git rev-parse "$HEAD" 2>/dev/null) || true
+          else
+            head_commit=""
+          fi
+          if [ "$base_commit" == "$head_commit" ] ; then
+            echo "::error::BASE and HEAD commits are the same. TruffleHog won't scan anything. Please see documentation (https://github.com/step-security/trufflehog-action#octocat-trufflehog-github-action)."
+            exit 1
+          fi
+        ##########################################
+        ## Scan commits based on event type     ##
+        ##########################################
+        else
+          if [ "$EVENT_NAME" == "push" ]; then
+            COMMIT_LENGTH=$(printenv COMMIT_IDS | jq length)
+            if [ "$COMMIT_LENGTH" == "0" ]; then
+              echo "No commits to scan"
+              exit 0
+            fi
+            HEAD="$EVENT_AFTER"
+            if [ "$EVENT_BEFORE" == "0000000000000000000000000000000000000000" ]; then
+              BASE=""
+            else
+              BASE="$EVENT_BEFORE"
+            fi
+          elif [ "$EVENT_NAME" == "workflow_dispatch" ] || [ "$EVENT_NAME" == "schedule" ]; then
+            BASE=""
+            HEAD=""
+          elif [ "$EVENT_NAME" == "pull_request" ]; then
+            BASE="$PR_BASE_SHA"
+            HEAD="$PR_HEAD_SHA"
+          fi
+        fi
+        ##########################################
+        ##          Run TruffleHog              ##
+        ##########################################
+        # Disable globbing and split ARGS into an array so multi-flag input
+        # (e.g. "--results=verified --json") works without glob expansion.
+        set -f
+        read -ra EXTRA_ARGS <<< "${ARGS:-}"
+        set +f
+        docker run --rm -v "$PWD":/scan:ro -w /scan \
+        "ghcr.io/trufflesecurity/trufflehog:${VERSION}" \
+        git file:///scan/ \
+        --since-commit \
+        ${BASE:-''} \
+        --branch \
+        ${HEAD:-''} \
+        --fail \
+        --no-update \
+        --github-actions \
+        "${EXTRA_ARGS[@]}"
