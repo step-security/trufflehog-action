@@ -40,7 +40,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Secret Scanning
-        uses: step-security/trufflehog-action@v6
+        uses: step-security/trufflehog-action@v3
         with:
           extra_args: --results=verified,unknown
 ```
@@ -72,7 +72,7 @@ If you're incorporating TruffleHog into a standalone workflow and aren't running
             echo "depth=$((${{ github.event.pull_request.commits }}+2))" >> $GITHUB_ENV
             echo "branch=${{ github.event.pull_request.head.ref }}" >> $GITHUB_ENV
           fi
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
         with:
           ref: ${{env.branch}}
           fetch-depth: ${{env.depth}}
