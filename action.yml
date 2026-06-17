@@ -148,9 +148,9 @@ runs:
         set -f
         read -ra EXTRA_ARGS <<< "${ARGS:-}"
         set +f
-        docker run --rm -v .:/tmp -w /tmp \
+        docker run --rm -v "$PWD":/scan:ro -w /scan \
         "ghcr.io/trufflesecurity/trufflehog:${VERSION}" \
-        git file:///tmp/ \
+        git file:///scan/ \
         --since-commit \
         ${BASE:-''} \
         --branch \
