@@ -40,7 +40,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Secret Scanning
-        uses: step-security/trufflehog-action@v3
+        uses: step-security/trufflehog-action@v6
         with:
           extra_args: --results=verified,unknown
 ```

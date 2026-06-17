@@ -113,7 +113,7 @@ runs:
             head_commit=""
           fi
           if [ "$base_commit" == "$head_commit" ] ; then
-            echo "::error::BASE and HEAD commits are the same. TruffleHog won't scan anything. Please see documentation (https://github.com/trufflesecurity/trufflehog#octocat-trufflehog-github-action)."
+            echo "::error::BASE and HEAD commits are the same. TruffleHog won't scan anything. Please see documentation (https://github.com/step-security/trufflehog-action#octocat-trufflehog-github-action)."
             exit 1
           fi
         ##########################################
