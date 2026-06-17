@@ -1,6 +1,6 @@
 name: 'TruffleHog OSS'
 description: 'Find and verify leaked credentials in your source code.'
-author: Truffle Security Co. <support@trufflesec.com>
+author: step-security
 
 inputs:
   path:
@@ -82,6 +82,11 @@ runs:
         ARGS: ${{ inputs.extra_args }}
         COMMIT_IDS: ${{ toJson(github.event.commits.*.id) }}
         VERSION: ${{ inputs.version }}
+        EVENT_NAME: ${{ github.event_name }}
+        EVENT_BEFORE: ${{ github.event.before }}
+        EVENT_AFTER: ${{ github.event.after }}
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       run: |
         ##########################################
         ## ADVANCED USAGE                       ##
@@ -115,31 +120,36 @@ runs:
         ## Scan commits based on event type     ##
         ##########################################
         else
-          if [ "${{ github.event_name }}" == "push" ]; then
+          if [ "$EVENT_NAME" == "push" ]; then
             COMMIT_LENGTH=$(printenv COMMIT_IDS | jq length)
-            if [ $COMMIT_LENGTH == "0" ]; then
+            if [ "$COMMIT_LENGTH" == "0" ]; then
               echo "No commits to scan"
               exit 0
             fi
-            HEAD=${{ github.event.after }}
-            if [ ${{ github.event.before }} == "0000000000000000000000000000000000000000" ]; then
+            HEAD="$EVENT_AFTER"
+            if [ "$EVENT_BEFORE" == "0000000000000000000000000000000000000000" ]; then
               BASE=""
             else
-              BASE=${{ github.event.before }}
+              BASE="$EVENT_BEFORE"
             fi
-          elif [ "${{ github.event_name }}" == "workflow_dispatch" ] || [ "${{ github.event_name }}" == "schedule" ]; then
+          elif [ "$EVENT_NAME" == "workflow_dispatch" ] || [ "$EVENT_NAME" == "schedule" ]; then
             BASE=""
             HEAD=""
-          elif [ "${{ github.event_name }}" == "pull_request" ]; then
-            BASE=${{github.event.pull_request.base.sha}}
-            HEAD=${{github.event.pull_request.head.sha}}
+          elif [ "$EVENT_NAME" == "pull_request" ]; then
+            BASE="$PR_BASE_SHA"
+            HEAD="$PR_HEAD_SHA"
           fi
         fi
         ##########################################
         ##          Run TruffleHog              ##
         ##########################################
+        # Disable globbing and split ARGS into an array so multi-flag input
+        # (e.g. "--results=verified --json") works without glob expansion.
+        set -f
+        read -ra EXTRA_ARGS <<< "${ARGS:-}"
+        set +f
         docker run --rm -v .:/tmp -w /tmp \
-        ghcr.io/trufflesecurity/trufflehog:${VERSION} \
+        "ghcr.io/trufflesecurity/trufflehog:${VERSION}" \
         git file:///tmp/ \
         --since-commit \
         ${BASE:-''} \
@@ -148,4 +158,4 @@ runs:
         --fail \
         --no-update \
         --github-actions \
-        ${ARGS:-''}
+        "${EXTRA_ARGS[@]}"
