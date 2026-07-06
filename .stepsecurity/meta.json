@@ -1,0 +1,18 @@
+{
+   "schema_version": "1",
+   "onboarding_type": "copied",
+   "archived": false,
+   "maintained_action_name": "step-security/trufflehog-action",
+   "upstream_full_repo_name": "trufflesecurity/trufflehog",
+   "action_type": "composite",
+   "last_release": {
+     "tag_name": "v3.95.5",
+     "created_at": "2026-06-17T16:10:01Z",
+     "published_at": "2026-06-17T20:29:59Z"
+   },
+   "sync": {
+     "ignore_presets": [
+       "defaults_v1"
+     ]
+   }
+ }
